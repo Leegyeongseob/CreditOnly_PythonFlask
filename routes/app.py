@@ -1,102 +1,134 @@
-from flask import Flask, request, jsonify
-from elasticsearch import Elasticsearch
-import os
-from dotenv import load_dotenv
-from DataController import collect_data, preprocess_data
+import io
 import logging
-from flask_cors import CORS
+import xml.etree.ElementTree as ET
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from configparser import ConfigParser
 
-# .env 파일에서 환경 변수를 로드합니다.
-load_dotenv()
+import pandas as pd
+import requests
+from elasticsearch import Elasticsearch
+from flask import Flask, request, jsonify
+
+# Flask 애플리케이션 생성
+app = Flask(__name__)
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Flask 애플리케이션 초기화
-app = Flask(__name__)
-# Flask 앱에 대해 Cross-Origin Resource Sharing (CORS)을 활성화합니다.
-CORS(app)
+# 설정 파일 로드
+config = ConfigParser()
+config.read('config.ini')
 
-# Elasticsearch 클라이언트 초기화
-es = Elasticsearch([{'host': os.getenv('ELASTICSEARCH_HOST', 'localhost'),
-                     'port': int(os.getenv('ELASTICSEARCH_PORT', 9200))}])
+# Elasticsearch 클라이언트 생성
+es = Elasticsearch([config['elasticsearch']['url']])
 
-# 백그라운드 작업을 처리하기 위한 스레드 풀 실행자
-executor = ThreadPoolExecutor(max_workers=3)
+def preprocess_xml_data(xml_data, columns):
+    """
+    수집된 XML 데이터를 전처리하는 함수
 
-# 데이터 수집 및 색인화를 위한 엔드포인트
-@app.route('/collect', methods=['POST'])
-def collect_and_index():
-    url = request.json.get('url')
-    if not url:
-        return jsonify({"error": "URL이 필요합니다."}), 400
+    :param xml_data: XML 데이터
+    :param columns: 추출할 컬럼 리스트
+    :return: 전처리된 데이터 (DataFrame 형식)
+    """
+    root = ET.fromstring(xml_data)
+    data = []
+    for item in root.findall('.//row'):
+        row = {col: item.find(col).text if item.find(col) is not None else None for col in columns}
+        data.append(row)
+    df = pd.DataFrame(data)
+    df.dropna(inplace=True)
+    return df
 
+@app.route('/index_data', methods=['POST'])
+def index_data():
     try:
-        # 비동기적으로 데이터 수집 및 처리
-        future = executor.submit(collect_and_process_data, url)
-        result = future.result()
+        # 한국은행 API 데이터 수집
+        ecos_api_key = config['apis']['ecos_api_key']
+        url = f"https://ecos.bok.or.kr/api/StatisticWord/{ecos_api_key}/xml/kr/1/10/소비자동향지수"
+        response = requests.get(url)
+        response.raise_for_status()
+        xml_data = response.content
 
-        if result is None:
-            return jsonify({"error": "데이터 수집 또는 처리에 실패했습니다."}), 400
+        # XML 데이터 전처리
+        columns = ['STAT_NAME', 'STAT_CODE']
+        df_xml = preprocess_xml_data(xml_data, columns)
 
-        logger.info(f"{url}에서 데이터를 성공적으로 수집하고 색인화했습니다.")
-        return jsonify({"message": "데이터 수집 및 처리가 시작되었습니다."}), 202
+        # XML 데이터 Elasticsearch 인덱싱
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(es.index, index='ecos_statistic_word', body=row.to_dict()) for _, row in df_xml.iterrows()]
+            for future in futures:
+                future.result()
+
+        # CSV 파일 데이터 수집
+        csv_file_path = config['files']['health_insurance_csv']
+        df_csv = pd.read_csv(csv_file_path)
+
+        # CSV 데이터 Elasticsearch 인덱싱
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(es.index, index='health_insurance', body=row.to_dict()) for _, row in df_csv.iterrows()]
+            for future in futures:
+                future.result()
+
+        logger.info("Data indexed successfully")
+        return jsonify({"message": "Data indexed successfully"}), 200
     except Exception as e:
-        logger.error(f"collect_and_index에서 오류 발생: {str(e)}")
-        return jsonify({"error": "내부 서버 오류"}), 500
+        logger.error(f"Error indexing data: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
-# 데이터 수집 및 처리 함수
-def collect_and_process_data(url):
-    data = collect_data(url)
-    if not data:
-        return None
+@app.route('/index_dart', methods=['POST'])
+def index_dart():
+    try:
+        dart_api_key = config['apis']['dart_api_key']
+        corp_code = request.json.get('corp_code', '00126380')
+        rcept_no = request.json.get('rcept_no', '20190401004781')
+        reprt_code = request.json.get('reprt_code', '11011')
 
-    processed_data = preprocess_data(data)
+        # 회사 개황 정보 수집
+        company_info_url = f'https://opendart.fss.or.kr/api/company.json?crtfc_key={dart_api_key}&corp_code={corp_code}'
+        company_response = requests.get(company_info_url)
+        company_response.raise_for_status()
+        company_data = company_response.json()['list']
 
-    # 처리된 각 데이터 항목을 색인화합니다.
-    for item in processed_data:
-        es.index(index='chatbot_data', body=item)
+        # 회사 개황 정보 Elasticsearch 인덱싱
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(es.index, index='dart_company_info', body=company) for company in company_data]
+            for future in futures:
+                future.result()
 
-    return True
+        # 재무제표 원본파일(XBRL) 수집
+        financial_statements_url = f'https://opendart.fss.or.kr/api/fnlttXbrl.xml?crtfc_key={dart_api_key}&rcept_no={rcept_no}&reprt_code={reprt_code}'
+        financial_response = requests.get(financial_statements_url)
+        financial_response.raise_for_status()
 
-# 검색을 위한 엔드포인트
+        # Zip 파일을 메모리에서 읽기
+        with zipfile.ZipFile(io.BytesIO(financial_response.content)) as zip_file:
+            zip_file.extractall(config['files']['xbrl_directory'])
+
+        logger.info("DART data indexed successfully")
+        return jsonify({"message": "DART data indexed successfully"}), 200
+    except Exception as e:
+        logger.error(f"Error indexing DART data: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/search', methods=['GET'])
 def search():
-    query = request.args.get('q')
-    if not query:
-        return jsonify({"error": "쿼리 매개변수가 필요합니다."}), 400
-
     try:
-        result = es.search(index='chatbot_data', body={
+        query = request.args.get('q')
+        index = request.args.get('index', 'ecos_statistic_word')
+        result = es.search(index=index, body={
             "query": {
                 "multi_match": {
                     "query": query,
-                    "fields": ["cleaned_content", "original_content"]
-                }
-            },
-            "highlight": {
-                "fields": {
-                    "cleaned_content": {},
-                    "original_content": {}
+                    "fields": ["*"]
                 }
             }
         })
-
-        logger.info(f"검색 쿼리 실행됨: {query}")
-        return jsonify(result['hits']['hits']), 200
+        return jsonify(result['hits']['hits'])
     except Exception as e:
-        logger.error(f"검색 중 오류 발생: {str(e)}")
-        return jsonify({"error": "내부 서버 오류"}), 500
-
-# 건강 상태 확인을 위한 엔드포인트
-@app.route('/health', methods=['GET'])
-def health_check():
-    if es.ping():
-        return jsonify({"status": "건강함", "elasticsearch": "연결됨"}), 200
-    else:
-        return jsonify({"status": "건강하지 않음", "elasticsearch": "연결되지 않음"}), 503
+        logger.error(f"Error searching data: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=os.getenv('FLASK_DEBUG', 'False') == 'True', host='0.0.0.0')
+    app.run(port=5000, debug=True)
