@@ -1,57 +1,75 @@
 import requests
-import zipfile
-import io
-from elasticsearch import Elasticsearch
-from flask import request, jsonify
-from concurrent.futures import ThreadPoolExecutor
-from configparser import ConfigParser
+from flask import jsonify, request
 import logging
-import os
-import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import xml.etree.ElementTree as ET
+from env.settings import DartApiKey
+from routes.DataProcessor import CreateIndexIfNotExists, SafeEsBulk
 
-# 로깅 설정
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+Logger = logging.getLogger(__name__)
 
-# 설정 파일 로드
-config = ConfigParser()
-config.read(os.path.join(os.path.dirname(__file__), '../config.ini'))
-
-# Elasticsearch 클라이언트 생성
-es = Elasticsearch([config['elasticsearch']['url']])
-
-def index_data():
+def IndexDartData():
     try:
-        dart_api_key = config['apis']['dart_api_key']
-        corp_code = request.json.get('corp_code', '00126380')
-        rcept_no = request.json.get('rcept_no', '20190401004781')
-        reprt_code = request.json.get('reprt_code', '11011')
+        # Content-Type 확인
+        if request.content_type != 'application/json':
+            return jsonify({"error": "Content-Type must be application/json"}), 400
 
-        # 회사 개황 정보 수집
-        company_info_url = f'https://opendart.fss.or.kr/api/company.json?crtfc_key={dart_api_key}&corp_code={corp_code}'
-        company_response = requests.get(company_info_url)
-        company_response.raise_for_status()
-        company_data = company_response.json()['list']
+        CorpCode = request.json.get('corp_code', '00126380')
+        RceptNo = request.json.get('rcept_no', '20190401004781')
+        ReprtCode = request.json.get('reprt_code', '11011')
 
-        # 회사 개황 정보 Elasticsearch 인덱싱
-        with ThreadPoolExecutor() as executor:
-            futures = [executor.submit(es.index, index='dart_company_info', body=company) for company in company_data]
-            for future in futures:
-                future.result()
+        CompanyInfoUrl = f'https://opendart.fss.or.kr/api/company.json?crtfc_key={DartApiKey}&corp_code={CorpCode}'
+        CompanyResponse = requests.get(CompanyInfoUrl)
+        CompanyResponse.raise_for_status()
+        CompanyData = CompanyResponse.json()['list']
 
-        # 재무제표 원본파일(XBRL) 수집
-        financial_statements_url = f'https://opendart.fss.or.kr/api/fnlttXbrl.xml?crtfc_key={dart_api_key}&rcept_no={rcept_no}&reprt_code={reprt_code}'
-        financial_response = requests.get(financial_statements_url)
-        financial_response.raise_for_status()
+        CreateIndexIfNotExists('DartCompanyInfo')
+        Actions = [
+            {
+                "_index": "DartCompanyInfo",
+                "_source": Company
+            }
+            for Company in CompanyData
+        ]
+        SafeEsBulk(Actions)
 
-        # Zip 파일을 메모리에서 읽기
-        with zipfile.ZipFile(io.BytesIO(financial_response.content)) as zip_file:
-            zip_file.extractall(config['files']['xbrl_directory'])
+        FinancialStatementsUrl = f'https://opendart.fss.or.kr/api/fnlttXbrl.xml?crtfc_key={DartApiKey}&rcept_no={RceptNo}&reprt_code={ReprtCode}'
+        FinancialResponse = requests.get(FinancialStatementsUrl)
+        FinancialResponse.raise_for_status()
 
-        logger.info("DART data indexed successfully")
+        # XBRL 파일 처리 로직 필요
+        ProcessXbrlFile(FinancialResponse.content)
+
+        Logger.info("DART data indexed successfully")
         return jsonify({"message": "DART data indexed successfully"}), 200
     except Exception as e:
-        logger.error(f"Error indexing DART data: {str(e)}")
+        Logger.error(f"Error indexing DART data: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+def ProcessXbrlFile(XbrlContent):
+    try:
+        Root = ET.fromstring(XbrlContent)
+
+        # XBRL 파일에서 필요한 데이터 추출 (예: 재무제표)
+        FinancialData = []
+        for Element in Root.findall('.//YourElementTag'):
+            Data = {
+                "field1": Element.find('YourSubElementTag1').text,
+                "field2": Element.find('YourSubElementTag2').text,
+                # 필요한 다른 필드들...
+            }
+            FinancialData.append(Data)
+
+        CreateIndexIfNotExists('DartFinancialData')
+        Actions = [
+            {
+                "_index": "DartFinancialData",
+                "_source": Data
+            }
+            for Data in FinancialData
+        ]
+        SafeEsBulk(Actions)
+
+        Logger.info("XBRL file processed and data indexed successfully")
+    except Exception as e:
+        Logger.error(f"Error processing XBRL file: {str(e)}")
+        raise

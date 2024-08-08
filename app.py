@@ -1,14 +1,29 @@
+import sys
+import os
 from flask import Flask
-from routes.BankOfKoreaHandler import index_data as index_bok_data
-from routes.DartHandler import index_data as index_dart_data
-from routes.Scheduler import start_scheduler
+import logging
 
-app = Flask(__name__)
+# 현재 디렉토리의 부모 디렉토리를 경로에 추가
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# URL 엔드포인트 추가
-app.add_url_rule('/api/elastic/bok', 'index_bok_data', index_bok_data, methods=['GET'])
-app.add_url_rule('/api/elastic/dart', 'index_dart_data', index_dart_data, methods=['GET'])
+from routes.BankOfKoreaHandler import IndexBokData
+from routes.DartHandler import IndexDartData
+from routes.Scheduler import StartScheduler
+from routes.CsvHandler import IndexCsvData
+from routes.ExcelHandler import IndexExcelData
+from routes.ElasticSearchHandler import GetEcosData, GetDartData
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+App = Flask(__name__)
+
+App.add_url_rule('/api/elastic/bok', 'IndexBokData', IndexBokData, methods=['GET'])
+App.add_url_rule('/api/elastic/dart', 'IndexDartData', IndexDartData, methods=['POST'])
+App.add_url_rule('/api/elastic/csv', 'IndexCsvData', IndexCsvData, methods=['GET'])
+App.add_url_rule('/api/elastic/excel', 'IndexExcelData', IndexExcelData, methods=['GET'])
+App.add_url_rule('/api/elastic/get_ecos', 'GetEcosData', GetEcosData, methods=['GET'])
+App.add_url_rule('/api/elastic/get_dart', 'GetDartData', GetDartData, methods=['GET'])
 
 if __name__ == '__main__':
-    start_scheduler()
-    app.run(port=5000, debug=True)
+    StartScheduler()
+    App.run(port=5000, debug=True)
