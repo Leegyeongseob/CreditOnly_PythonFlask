@@ -7,6 +7,7 @@ from routes.DataProcessor import CreateIndexIfNotExists, SafeEsBulk
 
 Logger = logging.getLogger(__name__)
 
+
 def IndexDartData():
     try:
         # Content-Type 확인
@@ -17,34 +18,34 @@ def IndexDartData():
         RceptNo = request.json.get('rcept_no', '20190401004781')
         ReprtCode = request.json.get('reprt_code', '11011')
 
+        # 기업개황 API 호출
         CompanyInfoUrl = f'https://opendart.fss.or.kr/api/company.json?crtfc_key={DartApiKey}&corp_code={CorpCode}'
         CompanyResponse = requests.get(CompanyInfoUrl)
-        CompanyResponse.raise_for_status()
-        CompanyData = CompanyResponse.json()['list']
 
-        CreateIndexIfNotExists('DartCompanyInfo')
+        if CompanyResponse.status_code != 200:
+            Logger.error(f"Error fetching company info: {CompanyResponse.status_code}")
+            return jsonify({"error": f"Failed to fetch company info, status code: {CompanyResponse.status_code}"}), 500
+
+        CompanyData = CompanyResponse.json()
+        if CompanyData['status'] != '000':
+            Logger.error(f"No data found in response: {CompanyData['message']}")
+            return jsonify({"error": "No data found in response"}), 500
+
+        CreateIndexIfNotExists('dart_company_info')
         Actions = [
             {
-                "_index": "DartCompanyInfo",
-                "_source": Company
+                "_index": "dart_company_info",
+                "_source": CompanyData
             }
-            for Company in CompanyData
         ]
         SafeEsBulk(Actions)
 
-        FinancialStatementsUrl = f'https://opendart.fss.or.kr/api/fnlttXbrl.xml?crtfc_key={DartApiKey}&rcept_no={RceptNo}&reprt_code={ReprtCode}'
-        FinancialResponse = requests.get(FinancialStatementsUrl)
-        FinancialResponse.raise_for_status()
+        Logger.info("DART company info indexed successfully")
+        return jsonify({"message": "DART company info indexed successfully"}), 200
 
-        # XBRL 파일 처리 로직 필요
-        ProcessXbrlFile(FinancialResponse.content)
-
-        Logger.info("DART data indexed successfully")
-        return jsonify({"message": "DART data indexed successfully"}), 200
     except Exception as e:
         Logger.error(f"Error indexing DART data: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 def ProcessXbrlFile(XbrlContent):
     try:
         Root = ET.fromstring(XbrlContent)
@@ -59,10 +60,10 @@ def ProcessXbrlFile(XbrlContent):
             }
             FinancialData.append(Data)
 
-        CreateIndexIfNotExists('DartFinancialData')
+        CreateIndexIfNotExists('dart_financial_data')
         Actions = [
             {
-                "_index": "DartFinancialData",
+                "_index": "dart_financial_data",
                 "_source": Data
             }
             for Data in FinancialData
