@@ -12,7 +12,8 @@ Es = Elasticsearch([ElasticsearchUrl])
 
 def IndexCsvData():
     try:
-        csv_file_path = os.path.join(os.path.dirname(__file__), '../data/국민건강보험공단_건강보험 보험료 현황_20211231.csv')
+        # 상대 경로로 csv 파일 경로 설정
+        csv_file_path = r'D:\dev\CreditOnly\CreditOnly_python_flask\CreditOnly_PythonFlask\data\국민건강보험공단_건강보험 보험료 현황_20211231.csv'
         df_csv = pd.read_csv(csv_file_path, encoding='euc-kr')  # 필요한 인코딩으로 변경
 
         # 필요에 따라 데이터 전처리 수행

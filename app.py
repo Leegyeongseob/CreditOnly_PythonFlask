@@ -13,6 +13,8 @@ from routes.Scheduler import StartScheduler
 from routes.CsvHandler import IndexCsvData
 from routes.ExcelHandler import IndexExcelData
 from routes.ElasticSearchHandler import GetEcosData, GetDartData
+from routes.SimilaritySearchHandler import SimilaritySearch
+from routes.FinancialDataHandler import IndexAllFinancialData  # 금융회사 데이터 핸들러 추가
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -27,6 +29,8 @@ App.add_url_rule('/api/elastic/csv', 'IndexCsvData', IndexCsvData, methods=['GET
 App.add_url_rule('/api/elastic/excel', 'IndexExcelData', IndexExcelData, methods=['GET'])
 App.add_url_rule('/api/elastic/get_ecos', 'GetEcosData', GetEcosData, methods=['GET'])
 App.add_url_rule('/api/elastic/get_dart', 'GetDartData', GetDartData, methods=['GET'])
+App.add_url_rule('/api/elastic/similarity_search', 'SimilaritySearch', SimilaritySearch, methods=['POST'])
+App.add_url_rule('/api/elastic/financial_company', 'IndexAllFinancialData', IndexAllFinancialData, methods=['GET'])
 
 if __name__ == '__main__':
     StartScheduler()

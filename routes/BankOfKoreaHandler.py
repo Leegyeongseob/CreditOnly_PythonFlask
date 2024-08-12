@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from PublicDataReader import Ecos
 from elasticsearch import Elasticsearch, helpers
 import requests
+import pandas as pd
 
 load_dotenv()
 
@@ -16,6 +17,7 @@ EcosApiKey = os.getenv('ECOS_API_KEY', '9M7CN1EZJCG7AJ0FYE3L')
 es = Elasticsearch([ElasticsearchUrl])
 
 # 로깅 설정
+logging.basicConfig(level=logging.INFO)
 Logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -44,22 +46,24 @@ def IndexBokData():
         SafeEsBulk(actions)
 
         Logger.info("BOK data indexed successfully")
-        return jsonify({"message": "BOK data indexed successfully"}), 200
     except Exception as e:
         Logger.error(f"Error indexing BOK data: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
 
 def IndexKeyStatistics():
     try:
         # 한국은행 KeyStatisticList API 호출
-        url = f"https://ecos.bok.or.kr/api/KeyStatisticList/{EcosApiKey}/xml/kr/1/10/"
+        url = f"https://ecos.bok.or.kr/api/KeyStatisticList/{EcosApiKey}/json/kr/1/10/"
         response = requests.get(url)
         response.raise_for_status()
-        xml_data = response.content
+        data = response.json()
 
-        # XML 데이터를 Elasticsearch에 인덱싱할 수 있는 구조로 변환
-        df = PreprocessXmlData(xml_data, ['STAT_NAME', 'STAT_CODE', 'DATA_VALUE', 'UNIT_NAME', 'TIME'])
+        # 데이터를 DataFrame으로 변환
+        rows = data.get('KeyStatisticList', {}).get('row', [])
+        if not rows:
+            Logger.warning("No data found from KeyStatisticList API")
+            return
+
+        df = pd.DataFrame(rows)
 
         # 인덱스 생성 (존재하지 않는 경우)
         index_name = 'ecos_key_statistics'
@@ -76,23 +80,32 @@ def IndexKeyStatistics():
         SafeEsBulk(actions)
 
         Logger.info("Key statistics data indexed successfully")
-        return jsonify({"message": "Key statistics data indexed successfully"}), 200
     except Exception as e:
         Logger.error(f"Error indexing Key statistics data: {str(e)}")
-        return jsonify({"error": str(e)}), 500
 
 def CreateIndexIfNotExists(index_name):
     if not es.indices.exists(index=index_name):
         es.indices.create(index=index_name, body={
             "mappings": {
                 "properties": {
-                    "WORD": {"type": "text"},
-                    "CONTENT": {"type": "text"},
-                    "STAT_NAME": {"type": "text"},
-                    "STAT_CODE": {"type": "text"},
-                    "DATA_VALUE": {"type": "float"},
-                    "UNIT_NAME": {"type": "text"},
-                    "TIME": {"type": "date"}
+                    "WORD": {
+                        "type": "text",
+                        "analyzer": "nori_analyzer"
+                    },
+                    "CONTENT": {
+                        "type": "text",
+                        "analyzer": "nori_analyzer"
+                    }
+                }
+            },
+            "settings": {
+                "analysis": {
+                    "analyzer": {
+                        "nori_analyzer": {
+                            "type": "custom",
+                            "tokenizer": "nori_tokenizer"
+                        }
+                    }
                 }
             }
         })
@@ -100,16 +113,13 @@ def CreateIndexIfNotExists(index_name):
 
 def SafeEsBulk(actions):
     try:
-        helpers.bulk(es, actions)
+        success, failed = helpers.bulk(es, actions, stats_only=True)
+        Logger.info(f"Bulk indexing: {success} succeeded, {failed} failed")
     except Exception as e:
         Logger.error(f"Error in Elasticsearch bulk operation: {str(e)}")
         raise
 
 def PreprocessXmlData(xml_data, columns):
-    # XML 데이터를 DataFrame으로 변환하는 함수
-    # XML 데이터를 pandas DataFrame으로 변환하여 반환하는 기능
-    # 각 XML 노드의 데이터를 필요한 컬럼에 맞추어 추출하여 DataFrame을 생성합니다.
-    import pandas as pd
     import xml.etree.ElementTree as ET
 
     root = ET.fromstring(xml_data)
@@ -122,11 +132,13 @@ def PreprocessXmlData(xml_data, columns):
 
 @app.route('/api/elastic/bok', methods=['GET'])
 def index_bok_data():
-    return IndexBokData()
+    IndexBokData()
+    return jsonify({"message": "BOK data indexing task started"}), 202
 
 @app.route('/api/elastic/key_statistics', methods=['GET'])
 def index_key_statistics():
-    return IndexKeyStatistics()
+    IndexKeyStatistics()
+    return jsonify({"message": "Key statistics indexing task started"}), 202
 
 @app.route('/search', methods=['POST'])
 def search():
@@ -135,12 +147,12 @@ def search():
         "query": {
             "multi_match": {
                 "query": query,
-                "fields": ["WORD", "CONTENT", "STAT_NAME"]
+                "fields": ["STAT_NAME", "DATA_VALUE", "UNIT_NAME", "TIME"]
             }
         }
     }
     try:
-        response = es.search(index="ecos_statistic_word", body=search_query)
+        response = es.search(index="ecos_key_statistics", body=search_query)
         hits = response['hits']['hits']
         return jsonify([hit['_source'] for hit in hits]), 200
     except Exception as e:
