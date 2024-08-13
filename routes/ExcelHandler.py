@@ -2,7 +2,7 @@ import pandas as pd
 import os
 from flask import jsonify
 from elasticsearch import Elasticsearch
-from routes.DataProcessor import CreateIndexIfNotExists, SafeEsBulk
+from routes.DataProcessor import createIndexIfNotExists, safeEsBulk
 import logging
 from env.settings import ElasticsearchUrl
 
@@ -18,7 +18,7 @@ def IndexExcelData():
         # 필요에 따라 데이터 전처리 수행
         df_excel = df_excel.dropna()  # 예시: 결측값 제거
 
-        CreateIndexIfNotExists('Statistics')
+        createIndexIfNotExists('Statistics')
         Actions = [
             {
                 "_index": "Statistics",
@@ -26,7 +26,7 @@ def IndexExcelData():
             }
             for _, row in df_excel.iterrows()
         ]
-        SafeEsBulk(Actions)
+        safeEsBulk(Actions)
 
         Logger.info("Excel data indexed successfully")
         return jsonify({"message": "Excel data indexed successfully"}), 200

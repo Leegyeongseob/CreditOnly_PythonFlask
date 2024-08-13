@@ -3,7 +3,8 @@ from flask import jsonify, request
 import logging
 import xml.etree.ElementTree as ET
 from env.settings import DartApiKey
-from routes.DataProcessor import CreateIndexIfNotExists, SafeEsBulk
+from routes.DataProcessor import createIndexIfNotExists, safeEsBulk
+
 
 Logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ def IndexDartData():
             return jsonify({"error": f"No data found in response: {CompanyData['message']}"}), 500
 
         # Elasticsearch에 인덱싱
-        CreateIndexIfNotExists('dart_company_info')
+        createIndexIfNotExists('dart_company_info')
         Actions = [
             {
                 "_index": "dart_company_info",
@@ -60,7 +61,7 @@ def IndexDartData():
                 }
             }
         ]
-        SafeEsBulk(Actions)
+        safeEsBulk(Actions)
 
         Logger.info("DART company info indexed successfully")
         return jsonify({"message": "DART company info indexed successfully"}), 200
@@ -83,7 +84,7 @@ def ProcessXbrlFile(XbrlContent):
             }
             FinancialData.append(Data)
 
-        CreateIndexIfNotExists('dart_financial_data')
+        createIndexIfNotExists('dart_financial_data')
         Actions = [
             {
                 "_index": "dart_financial_data",
@@ -91,7 +92,7 @@ def ProcessXbrlFile(XbrlContent):
             }
             for Data in FinancialData
         ]
-        SafeEsBulk(Actions)
+        safeEsBulk(Actions)
 
         Logger.info("XBRL file processed and data indexed successfully")
         return jsonify({"message": "XBRL file processed and data indexed successfully"}), 200

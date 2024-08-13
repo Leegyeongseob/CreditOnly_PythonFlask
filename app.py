@@ -40,6 +40,7 @@ App.add_url_rule('/api/elastic/get_dart', 'GetDartData', GetDartData, methods=['
 App.add_url_rule('/api/elastic/similarity_search', 'SimilaritySearch', SimilaritySearch, methods=['POST'])
 App.add_url_rule('/api/elastic/financial_company', 'IndexAllFinancialData', IndexAllFinancialData, methods=['GET'])
 
+
 # 각각의 데이터 시각화 관련 핸들러에 고유한 URL을 설정합니다.
 App.add_url_rule('/evaluation/credit_card', 'based_on_creditCard_to_json', based_on_creditCard_to_json, methods=['GET'])
 App.add_url_rule('/evaluation/jobs', 'based_on_jobs_to_json', based_on_jobs_to_json, methods=['GET'])
