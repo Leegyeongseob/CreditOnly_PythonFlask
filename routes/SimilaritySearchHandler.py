@@ -15,18 +15,19 @@ def SimilaritySearch():
         if not query_text:
             return jsonify({"error": "Query parameter is required"}), 400
 
-        index_name = 'ecos_statistic_word'
+        indices = ['ecos_statistic_word', 'dart_company_info', 'financial_data']  # 검색할 인덱스들
         query = {
             "query": {
                 "multi_match": {
                     "query": query_text,
-                    "fields": ["WORD", "CONTENT^2"],  # CONTENT 필드에 가중치 부여
+                    "fields": ["WORD", "CONTENT^2"],  # 모든 인덱스의 관련 필드를 포함
                     "fuzziness": "AUTO",
-                    "type": "best_fields"  # 가장 일치하는 필드에 대해 검색 수행
+                    "type": "best_fields"
                 }
             }
         }
-        response = es.search(index=index_name, body=query)
+
+        response = es.search(index=",".join(indices), body=query)
         return jsonify(response['hits']['hits']), 200
 
     except Exception as e:

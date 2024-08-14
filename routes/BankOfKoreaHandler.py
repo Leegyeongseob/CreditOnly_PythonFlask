@@ -1,4 +1,3 @@
-# 필요한 라이브러리들을 임포트합니다.
 import os
 from dotenv import load_dotenv
 import logging
