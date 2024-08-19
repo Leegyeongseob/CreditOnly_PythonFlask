@@ -23,32 +23,32 @@ from routes.machineLearning.based_on_residence import based_on_residence_to_json
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-App = Flask(__name__)
+app = Flask(__name__)
 
 # CORS 설정을 추가하여 모든 도메인에서의 요청을 허용합니다.
-CORS(App)
+CORS(app)
 
 # 경제 관련 데이터
-App.add_url_rule('/api/elastic/ecos', 'IndexBokData', IndexBokData, methods=['GET'])
-App.add_url_rule('/api/elastic/economic/financial_data', 'IndexAllFinancialData', IndexAllFinancialData, methods=['GET'])
+app.add_url_rule('/api/elastic/ecos', 'IndexBokData', IndexBokData, methods=['GET'])
+app.add_url_rule('/api/elastic/economic/financial_data', 'IndexAllFinancialData', IndexAllFinancialData, methods=['GET'])
 
 # 기업 관련 데이터
-App.add_url_rule('/api/elastic/company/dart', 'IndexDartData', IndexDartData, methods=['POST'])
-App.add_url_rule('/api/elastic/company/get_dart', 'GetDartData', GetDartData, methods=['GET'])
+app.add_url_rule('/api/elastic/company/dart', 'IndexDartData', IndexDartData, methods=['POST'])
+app.add_url_rule('/api/elastic/company/get_dart', 'GetDartData', GetDartData, methods=['GET'])
 
 # 데이터 유사도 검색
-App.add_url_rule('/api/elastic/similarity_search', 'SimilaritySearch', SimilaritySearch, methods=['POST'])
+app.add_url_rule('/api/elastic/similarity_search', 'SimilaritySearch', SimilaritySearch, methods=['POST'])
 
 # 데이터 인덱싱
-App.add_url_rule('/api/elastic/csv', 'IndexCsvData', IndexCsvData, methods=['GET'])
-App.add_url_rule('/api/elastic/excel', 'IndexExcelData', IndexExcelData, methods=['GET'])
+app.add_url_rule('/api/elastic/csv', 'IndexCsvData', IndexCsvData, methods=['GET'])
+app.add_url_rule('/api/elastic/excel', 'IndexExcelData', IndexExcelData, methods=['GET'])
 
 # 데이터 시각화
-App.add_url_rule('/evaluation/credit_card', 'based_on_creditCard_to_json', based_on_creditCard_to_json, methods=['GET'])
-App.add_url_rule('/evaluation/jobs', 'based_on_jobs_to_json', based_on_jobs_to_json, methods=['GET'])
-App.add_url_rule('/evaluation/jobs_and_loans', 'based_on_jobs_and_loans_to_json', based_on_jobs_and_loans_to_json, methods=['GET'])
-App.add_url_rule('/evaluation/residence', 'based_on_residence_to_json', based_on_residence_to_json, methods=['GET'])
+app.add_url_rule('/evaluation/credit_card', 'based_on_creditCard_to_json', based_on_creditCard_to_json, methods=['GET'])
+app.add_url_rule('/evaluation/jobs', 'based_on_jobs_to_json', based_on_jobs_to_json, methods=['GET'])
+app.add_url_rule('/evaluation/jobs_and_loans', 'based_on_jobs_and_loans_to_json', based_on_jobs_and_loans_to_json, methods=['GET'])
+app.add_url_rule('/evaluation/residence', 'based_on_residence_to_json', based_on_residence_to_json, methods=['GET'])
 
 if __name__ == '__main__':
     StartScheduler()
-    App.run(port=5000, debug=True)
+    app.run(port=5000, debug=True)

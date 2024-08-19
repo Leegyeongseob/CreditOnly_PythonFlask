@@ -1,11 +1,9 @@
 import os
 from dotenv import load_dotenv
 import logging
-from flask import Flask, request, jsonify
 from PublicDataReader import Ecos
 from elasticsearch import Elasticsearch, helpers
 import pandas as pd
-import requests
 
 # .env 파일에서 환경 변수를 로드합니다.
 load_dotenv()
@@ -21,17 +19,25 @@ es = Elasticsearch([ElasticsearchUrl])
 logging.basicConfig(level=logging.INFO)
 Logger = logging.getLogger(__name__)
 
-# Flask 애플리케이션을 생성합니다.
-app = Flask(__name__)
 
 def IndexBokData(keyword):
     try:
+        Logger.info(f"Starting IndexBokData with keyword: {keyword}")
+
         # PublicDataReader를 사용하여 ECOS 데이터를 조회합니다.
         api = Ecos(EcosApiKey)
+        Logger.info(f"ECOS API Key: {EcosApiKey}")  # API 키 확인 (주의: 실제 운영 환경에서는 로그에 API 키를 출력하지 마세요)
+
         df = api.get_statistic_word(용어=keyword)
+        Logger.info(f"API response: {df}")
+
+        if df is None or df.empty:
+            Logger.warning(f"No data found for keyword: {keyword}")
+            return {"error": "No data found for the given keyword"}, 404
 
         # 데이터프레임의 열 이름을 영어로 변경합니다.
         df = df.rename(columns={"용어": "WORD", "용어설명": "CONTENT"})
+        Logger.info(f"Renamed columns: {df.columns}")
 
         # 인덱스 이름을 정의합니다.
         index_name = 'ecos_statistic_word'
@@ -46,12 +52,16 @@ def IndexBokData(keyword):
             }
             for _, row in df.iterrows()
         ]
+        Logger.info(f"Created {len(actions)} actions for indexing")
+
         # 벌크 인덱싱을 수행합니다.
         SafeEsBulk(actions)
 
         Logger.info(f"{keyword} data indexed successfully")
+        return {"message": f"{keyword} data indexed successfully"}, 200
     except Exception as e:
         Logger.error(f"Error indexing {keyword} data: {str(e)}")
+        return {"error": str(e)}, 500
 
 def CreateIndexIfNotExists(index_name):
     # 인덱스가 존재하지 않는 경우에만 생성합니다.
@@ -90,18 +100,3 @@ def SafeEsBulk(actions):
     except Exception as e:
         Logger.error(f"Error in Elasticsearch bulk operation: {str(e)}")
         raise
-
-@app.route('/api/elastic/ecos', methods=['GET'])
-def index_ecos_data():
-    # URL 파라미터에서 키워드를 가져옵니다.
-    keyword = request.args.get('keyword', '')
-    if not keyword:
-        return jsonify({"error": "Keyword is required"}), 400
-
-    # 키워드로 ECOS 데이터를 인덱싱합니다.
-    IndexBokData(keyword)
-    return jsonify({"message": f"{keyword} data indexing task started"}), 202
-
-if __name__ == '__main__':
-    # Flask 애플리케이션을 실행합니다.
-    app.run(port=5000, debug=True)
