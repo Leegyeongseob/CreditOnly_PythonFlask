@@ -1,35 +1,33 @@
-import logging
-from flask import jsonify, request
+from flask import Flask, request, jsonify, Response
 from elasticsearch import Elasticsearch
-from env.settings import ElasticsearchUrl
+import json
 
-# 로깅 설정
-Logger = logging.getLogger(__name__)
+app = Flask(__name__)
+es = Elasticsearch("http://localhost:9200")
 
-# Elasticsearch 클라이언트 초기화
-es = Elasticsearch([ElasticsearchUrl])
+@app.route('/api/elastic/similarity_search', methods=['POST'])
+def similarity_search():
+    query_text = request.json.get('query')
+    if not query_text:
+        return jsonify({"error": "Query parameter is required"}), 400
 
-def SimilaritySearch():
-    try:
-        query_text = request.json.get('query')
-        if not query_text:
-            return jsonify({"error": "Query parameter is required"}), 400
-
-        indices = ['ecos_statistic_word', 'dart_company_info', 'financial_data']  # 검색할 인덱스들
-        query = {
-            "query": {
-                "multi_match": {
-                    "query": query_text,
-                    "fields": ["WORD", "CONTENT^2"],  # 모든 인덱스의 관련 필드를 포함
-                    "fuzziness": "AUTO",
-                    "type": "best_fields"
-                }
+    # Query Elasticsearch
+    response = es.search(index=["financial_data", "ecos_statistic_word", "dart_company_info"], body={
+        "query": {
+            "multi_match": {
+                "query": query_text,
+                "fields": ["WORD", "CONTENT", "corp_name", "fncoNm"],
+                "fuzziness": "AUTO"
             }
         }
+    })
 
-        response = es.search(index=",".join(indices), body=query)
-        return jsonify(response['hits']['hits']), 200
+    # Corrected response
+    return Response(
+        json.dumps(response['hits']['hits'], ensure_ascii=False),
+        mimetype='application/json'
+    )
 
-    except Exception as e:
-        Logger.error(f"Error performing similarity search: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(port=5000, debug=True)

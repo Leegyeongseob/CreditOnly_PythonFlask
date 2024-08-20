@@ -14,7 +14,7 @@ from routes.Scheduler import StartScheduler
 from routes.CsvHandler import IndexCsvData
 from routes.ExcelHandler import IndexExcelData
 from routes.ElasticSearchHandler import GetEcosData, GetDartData
-from routes.SimilaritySearchHandler import SimilaritySearch
+from routes.SimilaritySearchHandler import similarity_search
 from routes.FinancialDataHandler import IndexAllFinancialData
 from routes.machineLearning.based_on_creditCard import based_on_creditCard_to_json
 from routes.machineLearning.based_on_jobs import based_on_jobs_to_json
@@ -37,7 +37,8 @@ app.add_url_rule('/api/elastic/company/dart', 'IndexDartData', IndexDartData, me
 app.add_url_rule('/api/elastic/company/get_dart', 'GetDartData', GetDartData, methods=['GET'])
 
 # 데이터 유사도 검색
-app.add_url_rule('/api/elastic/similarity_search', 'SimilaritySearch', SimilaritySearch, methods=['POST'])
+# 데이터 유사도 검색
+app.add_url_rule('/api/elastic/similarity_search', 'similarity_search', similarity_search, methods=['POST'])
 
 # 데이터 인덱싱
 app.add_url_rule('/api/elastic/csv', 'IndexCsvData', IndexCsvData, methods=['GET'])
