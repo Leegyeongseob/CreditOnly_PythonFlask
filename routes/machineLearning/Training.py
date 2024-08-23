@@ -1,10 +1,12 @@
 # 데이터를 train, test 셋으로 분리하기
 from Datapreprocessing import dataPreprocessing
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score
 from sklearn.model_selection import GridSearchCV
+import time
+from tqdm import tqdm
+import numpy as np
 
 # CSV 파일 불러와서 데이터 전처리
 # 파일 경로 설정 (방법 1: raw string 사용)
@@ -43,60 +45,73 @@ def trainTestSplit(df):
     return X_train, X_test, y_train, y_test
 
 
+
 # XGBoost 모델 하이퍼파라미터 튜닝 함수
 def tune_xgboost(X_train, y_train):
-    # 하이퍼파라미터 그리드 설정
     param_grid = {
         'n_estimators': [100, 200, 300],
-        'max_depth': [3, 5, 7],
-        'learning_rate': [0.01, 0.1, 0.2],
+        'max_depth': [3, 4, 5],
+        'learning_rate': [0.01, 0.1, 0.3],
         'subsample': [0.8, 1.0],
         'colsample_bytree': [0.8, 1.0],
-        'gamma': [0, 0.1, 0.2]
+        'gamma': [0, 0.1]
     }
 
-    # XGBoost 모델 및 GridSearchCV 설정
-    model = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss', use_label_encoder=False)
-    grid_search = GridSearchCV(model, param_grid, cv=3, scoring='accuracy', n_jobs=-1)
+    model = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss')
 
-    # 데이터로 학습
+    # n_jobs를 1로 설정하여 병렬 처리 비활성화
+    grid_search = GridSearchCV(model, param_grid, cv=3, scoring='accuracy', n_jobs=1, verbose=2)
+
+    start_time = time.time()
+    print("하이퍼파라미터 튜닝 시작...")
     grid_search.fit(X_train, y_train)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
 
-    # 최적 하이퍼파라미터 및 성능 출력
     print("최적 하이퍼파라미터:", grid_search.best_params_)
     print("최고 정확도:", grid_search.best_score_)
+    print(f"튜닝 소요 시간: {elapsed_time:.2f}초")
 
     return grid_search.best_estimator_
 
 
-# XGBOOST로 모델 학습하기
 def train_xgboost_optimized(X_train, X_test, y_train, y_test):
-    # XGBoost 모델 하이퍼파라미터 튜닝 함수
     best_model = tune_xgboost(X_train, y_train)
 
-    # 예측 수행
+    start_time = time.time()
+    print("최종 모델 학습 중...")
+
+    # eval_metric 매개변수를 제거하고 eval_set만 사용
+    best_model.fit(X_train, y_train,
+                   eval_set=[(X_train, y_train), (X_test, y_test)],
+                   verbose=True)
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
     y_pred = best_model.predict(X_test)
 
-    # 평가 지표 계산
     accuracy = accuracy_score(y_test, y_pred)
     report = classification_report(y_test, y_pred, zero_division=1)
     cm = confusion_matrix(y_test, y_pred)
 
-    # ROC AUC 스코어 계산
     try:
         roc_auc = roc_auc_score(y_test, best_model.predict_proba(X_test), multi_class='ovr')
     except:
         roc_auc = "ROC AUC score cannot be computed for this model"
 
-    # 평가 결과 출력
+    print(f"\n모델 학습 소요 시간: {elapsed_time:.2f}초")
     print("모델 정확도:", accuracy)
     print("분류 리포트:\n", report)
     print("혼동 행렬:\n", cm)
     print("ROC AUC 스코어:", roc_auc)
 
+    return best_model
+
 
 # 데이터 전처리
-processedDf = dataPreprocessing(file_path,required_columns)
+processedDf = dataPreprocessing(file_path, required_columns)
+
 # train, test 데이터 분리
 X_train, X_test, y_train, y_test = trainTestSplit(processedDf)
 

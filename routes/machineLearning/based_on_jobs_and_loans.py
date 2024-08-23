@@ -9,5 +9,11 @@ based_on_jobs_and_loans = [
 
 def based_on_jobs_and_loans_to_json():
     df = dataPreprocessing(file_path, based_on_jobs_and_loans)
+
+    # "L00000001" 열 이름을 "Loan"으로 변경
+    if "L00000001" in df.columns:
+        df = df.rename(columns={"L00000001": "Loan"})
+
+
     df_json = df.to_json(orient='records', force_ascii=False)  # records 형태로 변환
     return df_json

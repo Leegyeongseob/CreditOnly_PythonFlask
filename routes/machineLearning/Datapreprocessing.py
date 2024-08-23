@@ -42,11 +42,13 @@ def dataPreprocessing(file_path, required_columns):
     string_columns = df.select_dtypes(include='object')
     for col in string_columns.columns:
         if col in df.columns:
-            # 문자열로 된 숫자를 숫자로 변환
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-
-            # 결측치를 9로 대체
-            df[col] = df[col].fillna(9)
+            if col == 'RES_ADD':
+                # RES_ADD 열은 문자열로 유지하고 결측치만 처리
+                df[col] = df[col].fillna('Unknown')
+            else:
+                # 다른 문자열 열들에 대해서는 기존 로직 유지
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = df[col].fillna(9)
 
     # HAC_CD를 정수형으로 변환
     if 'HAC_CD' in df.columns:
