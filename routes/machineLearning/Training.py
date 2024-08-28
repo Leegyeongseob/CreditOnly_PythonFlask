@@ -5,12 +5,14 @@ import xgboost as xgb
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score
 from sklearn.model_selection import GridSearchCV
 import time
-from tqdm import tqdm
-import numpy as np
+
 
 # CSV 파일 불러와서 데이터 전처리
 # 파일 경로 설정 (방법 1: raw string 사용)
-file_path = r'D:\dev\CreditOnly\CreditOnly_PythonFlask\data'
+# file_path = r'D:\dev\CreditOnly\CreditOnly_PythonFlask\data'
+
+# 우분투 환경에서 경로
+file_path = '/home/ubuntu/flask/data'
 # 필요로 하는 속성의 데이터만 뽑아서 csv로 만들기
 required_columns = [
     "HAC_CD",  # 직업 구분 (1:급여소득자, 2:개인사업자, 3:연금소득자, 4:주부, 5:전문직, 7:프리랜서, 8:무직, 9:기타) -> 시각화와 머신러닝에 사용
@@ -49,12 +51,13 @@ def trainTestSplit(df):
 # XGBoost 모델 하이퍼파라미터 튜닝 함수
 def tune_xgboost(X_train, y_train):
     param_grid = {
-        'n_estimators': [100, 200, 300],
-        'max_depth': [3, 4, 5],
-        'learning_rate': [0.01, 0.1, 0.3],
-        'subsample': [0.8, 1.0],
-        'colsample_bytree': [0.8, 1.0],
-        'gamma': [0, 0.1]
+        'n_estimators': [50, 150, 250, 500],
+        'max_depth': [3, 6, 9, 12],
+        'learning_rate': [0.01, 0.05, 0.1, 0.2],
+        'subsample': [0.7, 0.8, 0.9, 1.0],
+        'colsample_bytree': [0.7, 0.8, 0.9, 1.0],
+        'gamma': [0, 0.1, 0.2, 0.5],
+        'min_child_weight': [1, 5, 10]
     }
 
     model = xgb.XGBClassifier(objective='multi:softprob', eval_metric='mlogloss')
